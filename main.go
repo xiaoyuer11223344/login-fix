@@ -2,68 +2,49 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"github.com/go-rod/rod"
 	"log"
 	"login-fix/browser"
+	"strings"
 	"time"
 )
 
-func demo1() {
+func main() {
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(30)*time.Second)
+	loginURL := "https://dftc-wps.dfmc.com.cn/"
+
+	s := &browser.Selector{
+		UserInput:     "//input[@id='loginid']",
+		PasswordInput: "//input[@id='userpassword']",
+		LoginBtn:      "//*[@id='submit']",
+		CaptchaInput:  "//input[@id='validatecode']",
+		CaptchaImg:    "//div[@class='e9login-form-vc-img']/img[1]",
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(60)*time.Second)
 	defer cancel()
 
-	b, err := browser.New(ctx, false, "", "http://120.26.57.12:8000/")
+	b, err := browser.New(ctx, false, "", "http://120.26.57.12:8000")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer b.Close()
 
-	if err = b.Navigate(ctx, "http://zwff.aishi.com:85/"); err != nil {
+	if err = b.Navigate(ctx, loginURL); err != nil {
 		log.Fatal(err)
 	}
 
-	usernameInput, err := b.GetPage().ElementX("//*[@id='loginid']")
-	usernameInput.Input("13012567125")
+	if err = b.PerformLogin(ctx, s, "admin", "123456"); err != nil {
+		log.Fatal(err)
+	}
+
+	html, err := b.GetHtmlContent()
 	if err != nil {
-		log.Printf("failed to execute click via JavaScript: %v", err)
-		return
+		log.Fatal(err)
 	}
 
-	time.Sleep(1 * time.Second)
-
-	// 查找密码输入框并填充文本 "123456"（如果适用）
-	passwordInput, err := b.GetPage().ElementX("//*[@id='userpassword']")
-	passwordInput.Input("Chint.wmq2024c")
-	if err != nil {
-		log.Printf("failed to execute click via JavaScript: %v", err)
-		return
+	if strings.Contains(html, "e9header-quick-search-input") || strings.Contains(html, "portal-bay-window-outer") {
+		log.Printf("login success")
+	} else {
+		log.Printf("login failed")
 	}
-
-	time.Sleep(1 * time.Second)
-
-	// 查找密码输入框并填充文本 "123456"（如果适用）
-	imageInput, err := b.GetPage().ElementX("//input[@id='validatecode']")
-	imageInput.Input("112233")
-	if err != nil {
-		log.Printf("failed to execute click via JavaScript: %v", err)
-		return
-	}
-
-	time.Sleep(1 * time.Second)
-
-	// todo: Find LoginBtn elements
-	var btnEL *rod.Element
-	if btnEL, err = b.GetPage().ElementX("//*[@id='submit']"); err != nil {
-		log.Printf("failed to execute click via JavaScript: %v", err)
-		return
-	}
-
-	fmt.Println(btnEL)
-
-}
-
-func main() {
-	demo1()
 }

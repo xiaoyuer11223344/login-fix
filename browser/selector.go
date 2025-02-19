@@ -2,11 +2,11 @@ package browser
 
 import (
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/proto"
-	log "github.com/sirupsen/logrus"
 )
 
 type FormDesc struct {
@@ -41,9 +41,6 @@ func (b *Browser) findElements(
 	captchaInputSelectors,
 	captchaImageSelectors []string,
 ) (*Selector, error) {
-
-	logger := log.WithField("action", "find_form_elements")
-
 	selector := &Selector{}
 
 	// Find username input with retry
@@ -52,14 +49,14 @@ func (b *Browser) findElements(
 			if el, err := b.page.Element(sel); err == nil && el != nil {
 				if visible, _ := el.Visible(); visible {
 					selector.UserInput = el.MustGetXPath(false)
-					logger.WithField("xpath", selector.UserInput).Debug("Found username input")
+					log.Printf("Found username input")
 					goto foundPass
 				}
 			}
 		}
 		if i < MaxRetries-1 {
 			time.Sleep(BackoffFactor * time.Duration(1<<uint(i)))
-			logger.WithField("attempt", i+1).Debug("Username input not found, retrying...")
+			log.Printf("Username input not found, %d retrying...", i+1)
 		}
 	}
 
@@ -70,14 +67,14 @@ foundPass:
 			if el, err := b.page.Element(sel); err == nil && el != nil {
 				if visible, _ := el.Visible(); visible {
 					selector.PasswordInput = el.MustGetXPath(false)
-					logger.WithField("xpath", selector.PasswordInput).Debug("Found password input")
+					log.Printf("Found password input")
 					goto foundButton
 				}
 			}
 		}
 		if i < MaxRetries-1 {
 			time.Sleep(BackoffFactor * time.Duration(1<<uint(i)))
-			logger.WithField("attempt", i+1).Debug("Password input not found, retrying...")
+			log.Printf("Password input not found, %d retrying...", i+1)
 		}
 	}
 
@@ -88,14 +85,14 @@ foundButton:
 			if el, err := b.page.Element(sel); err == nil && el != nil {
 				if visible, _ := el.Visible(); visible {
 					selector.LoginBtn = el.MustGetXPath(false)
-					logger.WithField("xpath", selector.LoginBtn).Debug("Found login button")
+					log.Printf("Found login button")
 					goto foundCaptchaInput
 				}
 			}
 		}
 		if i < MaxRetries-1 {
 			time.Sleep(BackoffFactor * time.Duration(1<<uint(i)))
-			logger.WithField("attempt", i+1).Debug("Login button not found, retrying...")
+			log.Printf("Login button not found, %d retrying...", i+1)
 		}
 	}
 
@@ -106,7 +103,7 @@ foundCaptchaInput:
 				if el, err := b.page.Element(sel); err == nil && el != nil {
 					if visible, _ := el.Visible(); visible {
 						selector.CaptchaInput = el.MustGetXPath(false)
-						logger.WithField("xpath", selector.CaptchaInput).Debug("Found Captcha Input")
+						log.Printf("Found Captcha Input")
 						goto foundCaptchaImage
 					}
 				}
@@ -114,7 +111,7 @@ foundCaptchaInput:
 
 			if i < MaxRetries-1 {
 				time.Sleep(BackoffFactor * time.Duration(1<<uint(i)))
-				logger.WithField("attempt", i+1).Debug("captcha input not found, retrying...")
+				log.Printf("Captcha input not found, %d retrying...", i+1)
 			}
 		}
 	}
@@ -126,7 +123,7 @@ foundCaptchaImage:
 				if el, err := b.page.Element(sel); err == nil && el != nil {
 					if visible, _ := el.Visible(); visible {
 						selector.CaptchaImg = el.MustGetXPath(false)
-						logger.WithField("xpath", selector.CaptchaImg).Debug("Found Captcha Image")
+						log.Printf("Found Captcha Image")
 						goto over
 					}
 				}
@@ -134,7 +131,7 @@ foundCaptchaImage:
 
 			if i < MaxRetries-1 {
 				time.Sleep(BackoffFactor * time.Duration(1<<uint(i)))
-				logger.WithField("attempt", i+1).Debug("captcha image not found, retrying...")
+				log.Printf("Captcha image not found, %d retrying...", i+1)
 			}
 		}
 	}

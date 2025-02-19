@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"github.com/go-rod/rod/lib/devices"
 	"github.com/go-rod/rod/lib/launcher"
+	"log"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/proto"
-	log "github.com/sirupsen/logrus"
 )
 
 type Browser struct {
@@ -66,7 +66,7 @@ func New(ctx context.Context, headless bool, proxy string, ocrBaseURL string) (*
 		Set("disable-gpu").
 		Set("no-default-browser-check").
 		Set("disable-images", "true").
-		Set("enable-automation", "false"). // 防止监测 webdriver
+		Set("enable-automation", "false").                    // 防止监测 webdriver
 		Set("disable-blink-features", "AutomationControlled") // 禁用 blink 特征，绕过了加速乐检测
 
 	if proxy != "" {
@@ -118,60 +118,7 @@ func (b *Browser) Close() error {
 	return nil
 }
 
-func (b *Browser) IsLoggedIn() bool {
-	// Check for common login success indicators
-	successIndicators := []string{
-		".user-info",
-		".user-profile",
-		".logout-btn",
-		"#logout",
-		".welcome-message",
-	}
-
-	for _, selector := range successIndicators {
-		if el, err := b.page.Element(selector); err == nil && el != nil {
-			if visible, _ := el.Visible(); visible {
-				return true
-			}
-		}
-	}
-
-	// Check URL for login-related paths
-	currentURL := b.page.MustInfo().URL
-	loginPaths := []string{"/login", "/signin", "/auth"}
-	for _, path := range loginPaths {
-		if strings.Contains(currentURL, path) {
-			return false
-		}
-	}
-
-	// Check for error messages
-	errorIndicators := []string{
-		".error-message",
-		".alert-error",
-		".login-error",
-		".colorR",
-	}
-
-	for _, selector := range errorIndicators {
-		if el, err := b.page.Element(selector); err == nil && el != nil {
-			if visible, _ := el.Visible(); visible {
-				return false
-			}
-		}
-	}
-
-	return true
-}
-
 func (b *Browser) findElement(selector, name string) (*rod.Element, error) {
-	logger := log.WithFields(log.Fields{
-		"selector": selector,
-		"name":     name,
-		"attempt":  "0",
-	})
-
-	logger.Info("Finding element")
 
 	var el *rod.Element
 	var err error
@@ -182,7 +129,7 @@ func (b *Browser) findElement(selector, name string) (*rod.Element, error) {
 		el, err = b.page.ElementX(selector)
 		if err == nil && el != nil {
 			if visible, _ := el.Visible(); visible {
-				logger.Info("Element found and ready")
+				log.Printf("%s Element found and ready", name)
 				return el, nil
 			}
 		}
@@ -190,28 +137,18 @@ func (b *Browser) findElement(selector, name string) (*rod.Element, error) {
 		if i < 2 {
 			//time.Sleep(BackoffFactor * time.Duration(1<<uint(i)))
 			time.Sleep(time.Duration(1 << uint(i)))
-			logger.WithField("attempt", i+1).Debug("Element not found, retrying...")
+			log.Printf("%s Element not found, %d retrying...", name, i+1)
 		}
 	}
 
-	return nil, fmt.Errorf("element <%s> not found or not visible after retries", name)
+	return nil, fmt.Errorf("%s element not found or not visible after retries", name)
 }
-
-func (b *Browser) PerformLogin(selector *Selector, username, password string) error {
+func (b *Browser) PerformLogin(ctx context.Context, selector *Selector, username, password string) error {
 	var err error
-
-	logger := log.WithFields(log.Fields{
-		"action":   "perform_login",
-		"username": username,
-		"password": password,
-		"url":      b.page.MustInfo().URL,
-	})
-
-	logger.Debug("Starting form interaction")
 
 	// todo: Find UserInput elements
 	var userEL *rod.Element
-	if userEL, err = b.findElement(selector.UserInput, "username input"); err != nil {
+	if userEL, err = b.findElementWithContext(ctx, selector.UserInput, "username input", 10*time.Second); err != nil {
 		return err
 	}
 	if err = userEL.Input(username); err != nil {
@@ -221,7 +158,7 @@ func (b *Browser) PerformLogin(selector *Selector, username, password string) er
 
 	// todo: Find PasswordInput elements
 	var passEl *rod.Element
-	if passEl, err = b.findElement(selector.PasswordInput, "password input"); err != nil {
+	if passEl, err = b.findElementWithContext(ctx, selector.PasswordInput, "password input", 10*time.Second); err != nil {
 		return err
 	}
 	if err = passEl.Input(password); err != nil {
@@ -231,44 +168,27 @@ func (b *Browser) PerformLogin(selector *Selector, username, password string) er
 
 	// todo: Find captcha elements
 	if b.captchaHandler != nil {
-		// If captcha elements found, handle the challenge
+		var captchaText string
 		if selector.CaptchaImg != "" && selector.CaptchaInput != "" {
-			var captchaText string
+			log.Printf("Handling captcha challenge")
+			if imgEL, _err := b.findElementWithContext(ctx, selector.CaptchaImg, "captcha image", 10*time.Second); _err == nil {
+				if captchaText, _err = b.captchaHandler.HandleCaptcha(imgEL); _err == nil {
+					var captchaEl *rod.Element
+					if captchaEl, _err = b.findElementWithContext(ctx, selector.CaptchaInput, "captcha input", 10*time.Second); err == nil {
+						if _err = captchaEl.Input(captchaText); _err != nil {
 
-			logger.Debug("Handling captcha challenge")
-
-			// Find captcha image
-			imgEL, err := b.findElement(selector.CaptchaImg, "captcha image")
-			if err != nil {
-				goto ClickBtn
+						}
+					}
+				}
 			}
-
-			captchaText, err = b.captchaHandler.HandleCaptcha(imgEL)
-			if err != nil {
-				return fmt.Errorf("failed to handle captcha: %w", err)
-			}
-
-			// Fill captcha text
-			var captchaEl *rod.Element
-			if captchaEl, err = b.findElement(selector.CaptchaInput, "captcha input"); err != nil {
-				return fmt.Errorf("failed to find captcha input: %w", err)
-			}
-
-			if err = captchaEl.Input(captchaText); err != nil {
-				return fmt.Errorf("failed to input captcha: %w", err)
-			}
-
-			time.Sleep(500 * time.Millisecond)
-			logger.WithField("captcha_text", captchaText).Debug("Captcha input completed")
+			log.Printf("Captcha input completed")
 		} else {
-			logger.Debug("No captcha elements found, proceeding without captcha")
+			log.Printf("No captcha elements found, proceeding without captcha")
 		}
 	}
-
-ClickBtn:
 	// todo: Find LoginBtn elements
 	var btnEL *rod.Element
-	if btnEL, err = b.findElement(selector.LoginBtn, "login button"); err != nil {
+	if btnEL, err = b.findElementWithContext(ctx, selector.LoginBtn, "login button", 10*time.Second); err != nil {
 		return err
 	}
 	// todo: exec btn
@@ -292,68 +212,55 @@ ClickBtn:
 		return fmt.Errorf("failed to click login button: %v", err)
 	}
 
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(3 * time.Second)
 
 	return nil
 }
 
+func (b *Browser) findElementWithContext(parentCtx context.Context, selector, description string, timeout time.Duration) (*rod.Element, error) {
+	ctx, cancel := context.WithTimeout(parentCtx, timeout)
+	defer cancel()
+
+	ch := make(chan *rod.Element, 1)
+	errCh := make(chan error, 1)
+
+	go func() {
+		el, err := b.findElement(selector, description)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		ch <- el
+	}()
+
+	select {
+	case el := <-ch:
+		return el, nil
+	case err := <-errCh:
+		return nil, err
+	case <-ctx.Done():
+		return nil, fmt.Errorf("timeout while finding %s: %v", description, ctx.Err())
+	}
+}
+
 func (b *Browser) Login(ctx context.Context, selector *Selector, username, password string) error {
 	start := time.Now()
-	logger := log.WithFields(log.Fields{
-		"action":   "login_attempt",
-		"username": username,
-		"password": password,
-		"url":      b.page.MustInfo().URL,
-	})
-
-	logger.Debug("Testing credentials")
-
-	// Create error channel for timeout handling
-	//errChan := make(chan error, 1)
-	//go func() {
-	//	defer close(errChan)
-	//	// Perform login operation
-	//	if err := b.performLogin(selector, username, password); err != nil {
-	//		errChan <- fmt.Errorf("login failed: %w", err)
-	//		return
-	//	}
-	//	errChan <- nil
-	//}()
-
-	if err := b.PerformLogin(selector, username, password); err != nil {
+	if err := b.PerformLogin(ctx, selector, username, password); err != nil {
 		return fmt.Errorf("login failed: %w", err)
 	}
-
-	//
-	//// Wait for login to complete or timeout
-	//select {
-	//case err := <-errChan:
-	//	if err != nil {
-	//		fmt.Println(22222)
-	//		return err
-	//	}
-	//case <-ctx.Done():
-	//	return fmt.Errorf("login timed out after %v", ctx.Err())
-	//}
-
-	logger.WithField("duration", time.Since(start)).Debug("Login form submitted")
-
+	log.Printf("Login form submitted %s", time.Since(start))
 	return nil
 }
 
 func (b *Browser) Navigate(ctx context.Context, url string) error {
 	var err error
 
-	logger := log.WithFields(log.Fields{
-		"action": "navigate",
-		"url":    url,
-	})
-	logger.Debug("Starting navigation")
+	log.Printf("Starting navigation %s", url)
 
 	// Clean up previous session
 	if b.page != nil {
 		if err = b.page.Close(); err != nil {
-			logger.WithError(err).Debug("Error during cleanup")
+			log.Printf("%s, Error during cleanup", url)
 		}
 	}
 
@@ -369,10 +276,6 @@ func (b *Browser) Navigate(ctx context.Context, url string) error {
 
 	if err = b.page.WaitLoad(); err != nil {
 		return fmt.Errorf("page load failed: %w", err)
-	}
-
-	if err = b.page.WaitIdle(30 * time.Second); err != nil {
-		return fmt.Errorf("page idle failed: %w", err)
 	}
 
 	//// Create error channel for timeout handling
@@ -408,7 +311,7 @@ func (b *Browser) Navigate(ctx context.Context, url string) error {
 	//	return fmt.Errorf("login timed out after %v", ctx.Err())
 	//}
 
-	fmt.Println("Navigation completed successfully")
+	log.Println("Navigation completed successfully")
 	return nil
 }
 

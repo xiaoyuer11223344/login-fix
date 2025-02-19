@@ -8,8 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-
-	log "github.com/sirupsen/logrus"
 )
 
 type Client struct {
@@ -48,8 +46,6 @@ func (c *Client) RecognizeCaptcha(base64Image string) (string, error) {
 	if !c.initialized {
 		return "", errors.New("OCR client not properly initialized")
 	}
-
-	logger := log.WithField("action", "ocr_request")
 
 	if c.baseURL == "" {
 		return "", errors.New("OCR endpoint URL not configured")
@@ -97,6 +93,5 @@ func (c *Client) RecognizeCaptcha(base64Image string) (string, error) {
 		return "", fmt.Errorf("OCR service error: %s", ocrResp.Message)
 	}
 
-	logger.WithField("result", ocrResp).Info("OCR request successful")
 	return ocrResp.Data, nil
 }

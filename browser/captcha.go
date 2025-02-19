@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/proto"
-	log "github.com/sirupsen/logrus"
-	"login-fix/ocr"
 	"strings"
+
+	"log"
+	"login-fix/ocr"
 )
 
 type CaptchaHandler struct {
@@ -40,7 +41,6 @@ func NewCaptchaHandler(browser *Browser, ocrBaseURL string) (*CaptchaHandler, er
 }
 
 func (h *CaptchaHandler) HandleCaptcha(imgEL *rod.Element) (string, error) {
-	logger := log.WithField("action", "handle_captcha")
 
 	data, err := imgEL.Screenshot(proto.PageCaptureScreenshotFormat("png"), 1)
 	if err != nil {
@@ -62,6 +62,6 @@ func (h *CaptchaHandler) HandleCaptcha(imgEL *rod.Element) (string, error) {
 		return "", ocr.ErrInvalidResponse
 	}
 
-	logger.WithField("result", result).Info("Captcha recognized")
+	log.Printf("Captcha recognized")
 	return result, nil
 }
